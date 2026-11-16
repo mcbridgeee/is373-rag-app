@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Sessions · {{ brand.name }}{% endblock %}
+{% block content %}
+<section class="form-stack wide" aria-labelledby="sessions-title">
+  <p class="eyebrow">client: Jenny Alvarez (fictional)</p>
+  <h1 id="sessions-title">Session transcripts</h1>
+  <ul class="session-list">
+    {% for s in sessions %}<li><a href="/sessions/{{ s.id }}">{{ s.title }}</a><span>{{ s.session_date }}</span></li>{% endfor %}
+  </ul>
+</section>
+{% endblock %}

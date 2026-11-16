@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero" aria-labelledby="hero-title">
+  <div class="hero-mark"><img src="/static/logo.svg" alt="" width="160" height="160"></div>
+  <div class="hero-copy">
+    <p class="eyebrow">for therapists, before a session</p>
+    <h1 id="hero-title">{{ brand.headline }}</h1>
+    <p class="lede">{{ brand.summary }}</p>
+    {% if current_user %}<a class="button" href="/ask">Ask a question <span aria-hidden="true">→</span></a>
+    {% else %}<a class="button" href="/login">Log in to try it <span aria-hidden="true">→</span></a>{% endif %}
+  </div>
+</section>
+<section id="how" class="two-column" aria-labelledby="how-title">
+  <div><p class="eyebrow">how it works</p><h2 id="how-title">Search by meaning, answer from the record.</h2></div>
+  <div>
+    <p>You ask in your own words, like "has she talked about trouble sleeping?" The app finds the passages closest in meaning, even when the client never used your words, and answers only from those passages.</p>
+    <p>Each claim links to the session and passage it came from, so you can check it. When the transcripts don't cover something, it says so instead of guessing.</p>
+    <p class="promise">{{ brand.promise }}</p>
+  </div>
+</section>
+<section class="panel" aria-labelledby="demo-title">
+  <p class="eyebrow">about this demo</p>
+  <h2 id="demo-title">One fictional client, six sessions.</h2>
+  <p>The transcripts are invented for a class project: one client, Jenny Alvarez, and one therapist, Dr. Aris Thorne, over six weekly sessions. No real people and no real clinical data. A real deployment would need HIPAA compliance, client consent and a business associate agreement with the AI provider, which this prototype does not have.</p>
+</section>
+{% endblock %}

@@ -1,0 +1,13 @@
+{
+  "name": "Session Notes",
+  "audience": "A therapist or counselor preparing for a session who needs to recall what a client said weeks ago",
+  "promise": "Every answer points to the session it came from.",
+  "headline": "Find what your client said, and the session they said it in.",
+  "summary": "Ask a question in your own words across a client's past session transcripts. Every answer links to the exact passage, and it says so when the transcripts don't cover something.",
+  "palette": {
+    "ink": "#23343F",
+    "paper": "#F4F1EC",
+    "accent": "#A9CBC8",
+    "surface": "#FBFAF7"
+  }
+}

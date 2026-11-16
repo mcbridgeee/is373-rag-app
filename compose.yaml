@@ -1,0 +1,35 @@
+# Runs on the droplet beside the existing Traefik (from 373_hosting).
+# The app joins Traefik's network; it publishes no public port of its own.
+services:
+  app:
+    build: .
+    image: is373-rag-app:latest
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - rag-data:/data
+    # Local checks only: curl -H 'Host: rag.bmctiernan.com' http://127.0.0.1:8095/health
+    ports:
+      - "127.0.0.1:8095:8000"
+    networks:
+      - default
+      - hosting
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: ${TRAEFIK_NETWORK:-hosting-web}
+      traefik.http.routers.rag.rule: Host(`${APP_HOST:?Set APP_HOST in .env}`)
+      traefik.http.routers.rag.entrypoints: websecure
+      traefik.http.routers.rag.middlewares: rag-ratelimit,rag-headers
+      traefik.http.services.rag.loadbalancer.server.port: "8000"
+      traefik.http.middlewares.rag-headers.headers.customResponseHeaders.Server: ""
+      # Each question can call the model, so this is tighter than the quiz.
+      traefik.http.middlewares.rag-ratelimit.ratelimit.average: "10"
+      traefik.http.middlewares.rag-ratelimit.ratelimit.burst: "30"
+
+volumes:
+  rag-data:
+
+networks:
+  hosting:
+    external: true
+    name: ${TRAEFIK_NETWORK:-hosting-web}

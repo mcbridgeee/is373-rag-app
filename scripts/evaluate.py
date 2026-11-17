@@ -1,19 +1,33 @@
-"""Run the six evaluation questions against both retrievers and both chunkings.
+"""Run the six evaluation questions and save everything a reviewer needs to check them.
 
-Run inside the container so it uses the real embedding model:
+Run inside the container so it uses the real embedding model and the real key:
 
-    docker compose exec app python scripts/evaluate.py            # retrieval only
-    docker compose exec app python scripts/evaluate.py --answers  # also ask Groq
+    docker compose exec app python scripts/evaluate.py --answers
+    docker compose exec app python scripts/evaluate.py --answers --k 10
+    docker compose exec app python scripts/evaluate.py --answers --export   # print a copyable archive
 
-Writes runtime/evaluation.md (copy it into the repo's docs/ to keep it).
-Expected sessions come from the planted content in the transcripts.
+Each run writes a folder under the data volume (``/data/evaluation/<time>-k<k>/``):
+
+- ``results.json``: per question, the retrieved chunk IDs and scores for each
+  retriever, partial recall, the exact context sent to the model, the model
+  name and its answer, and any citation warnings.
+- ``report.md``: the same, readable, plus a claim sheet: each sentence of each
+  answer with the passages it cites, and blank "supported?" cells to fill in
+  by reading the passage. The script never judges support itself.
+
+The context is the fictional transcript text, so nothing needed redacting.
+Expected sessions come from the facts planted in the transcripts before any run.
 """
 
 import argparse
+import base64
 from datetime import datetime, timezone
+import io
+import json
 from pathlib import Path
 import re
 import sys
+import tarfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -21,128 +35,234 @@ from app.rag import answer as answering  # pylint: disable=wrong-import-position
 from app.rag.store import Index  # pylint: disable=wrong-import-position
 from app.settings import Settings  # pylint: disable=wrong-import-position
 
-K = 5
+# (id, type, question, expected sessions, also acceptable)
 QUESTIONS = [
     (
         "Q1",
         "Exact term",
         "Has the client mentioned sertraline?",
-        {"S03", "S04", "S05", "S06"},
-        set(),
+        ["S03", "S04", "S05", "S06"],
+        [],
     ),
     (
         "Q2",
         "Paraphrase",
         "Has the client talked about trouble sleeping?",
-        {"S02", "S05"},
-        {"S04", "S06"},
+        ["S02", "S05"],
+        ["S04", "S06"],
     ),
     (
         "Q3",
         "Relationship over time",
         "How has the client's relationship with their sister changed?",
-        {"S01", "S04", "S05", "S06"},
-        {"S02", "S03"},
+        ["S01", "S04", "S05", "S06"],
+        ["S02", "S03"],
     ),
     (
         "Q4",
         "Ordinary useful",
         "What coping strategies have we tried, and how did they go?",
-        {"S02", "S03", "S04", "S05", "S06"},
-        set(),
+        ["S02", "S03", "S04", "S05", "S06"],
+        [],
     ),
-    ("Q5", "Unanswerable", "What is the client's diagnosis?", set(), set()),
+    ("Q5", "Unanswerable", "What is the client's diagnosis?", [], []),
     (
         "Q6",
         "Counting",
         "How many panic attacks has the client reported?",
-        {"S01", "S03", "S05"},
-        set(),
+        ["S01", "S03", "S05"],
+        [],
     ),
 ]
+SENTENCE = re.compile(r"(?<=[.!?])\s+(?=[A-Z\"(])")
 
 
-def _sessions(hits) -> list[str]:
-    return sorted({hit.chunk.session_id for hit in hits})
+def recall(found: set, expected: list) -> dict:
+    """Partial recall: how many expected sessions came back, and which didn't."""
+    if not expected:
+        return {"found": 0, "expected": 0, "score": None, "missing": []}
+    hit = [s for s in expected if s in found]
+    return {
+        "found": len(hit),
+        "expected": len(expected),
+        "score": round(len(hit) / len(expected), 2),
+        "missing": [s for s in expected if s not in found],
+    }
 
 
-def _verdict(found: set, must: set) -> str:
-    if not must:
-        return "n/a (nothing should be found)"
-    missing = sorted(must - found)
-    return "all found" if not missing else "missing " + ", ".join(missing)
+def run_retrievers(index: Index, question: str, k: int) -> dict:
+    runs = {
+        "keyword": index.keyword(question, k=k),
+        "vector": index.vector(question, k=k),
+        "vector_fixed": index.vector(question, k=k, strategy="fixed"),
+    }
+    return {
+        name: [
+            {
+                "id": h.chunk.id,
+                "session": h.chunk.session_id,
+                "score": round(h.score, 4),
+            }
+            for h in hits
+        ]
+        for name, hits in runs.items()
+    }, runs["vector"]
+
+
+def claims(text: str, hits) -> list[dict]:
+    """Each sentence of an answer, with the passages it cites, for a by-hand check."""
+    passages = {h.chunk.id: h.chunk.text for h in hits}
+    rows = []
+    for sentence in SENTENCE.split(text.strip()):
+        cited = answering.CITATION.findall(sentence)
+        rows.append(
+            {
+                "claim": answering.CITATION.sub("", sentence).strip(),
+                "cited": cited,
+                "passages": {c: passages.get(c, "(not retrieved)") for c in cited},
+                "supported": None,  # filled in by a person reading the passages
+                "note": "",
+            }
+        )
+    return rows
+
+
+def report(meta: dict, rows: list) -> str:
+    lines = [
+        f"# Evaluation run {meta['run']}",
+        "",
+        f"- Retrieved passages per question (k): {meta['k']}",
+        f"- Embedding model: {meta['embedding']}",
+        f"- Answer model: {meta['model'] or 'not run (retrieval only)'}",
+        f"- Sessions indexed: {meta['sessions']}",
+        "- Context: the passages below are exactly what was sent to the model. The transcripts are fictional, so nothing was redacted.",
+        "",
+        "## Partial recall (expected sessions found / expected)",
+        "",
+        "| # | Keyword | Vector, exchange chunks | Vector, fixed chunks |",
+        "| --- | --- | --- | --- |",
+    ]
+    for row in rows:
+        cells = []
+        for name in ("keyword", "vector", "vector_fixed"):
+            r = row["recall"][name]
+            if r["score"] is None:
+                cells.append(
+                    f"{len(row['retrieved'][name])} passages returned (none expected)"
+                )
+            else:
+                miss = f", missing {', '.join(r['missing'])}" if r["missing"] else ""
+                cells.append(f"{r['found']}/{r['expected']}{miss}")
+        lines.append(f"| {row['id']} | " + " | ".join(cells) + " |")
+    for row in rows:
+        lines += ["", f"## {row['id']} ({row['type']}): {row['question']}", ""]
+        lines.append(f"Expected sessions: {', '.join(row['expected']) or 'none'}")
+        if row["also_ok"]:
+            lines.append(f"Also acceptable: {', '.join(row['also_ok'])}")
+        lines.append("")
+        for name, hits in row["retrieved"].items():
+            ids = ", ".join(f"{h['id']} ({h['score']})" for h in hits) or "nothing"
+            lines.append(f"- **{name}:** {ids}")
+        if row.get("answer") is not None:
+            lines += [
+                "",
+                "**Answer:**",
+                "",
+                "> " + row["answer"].replace("\n", "\n> "),
+                "",
+            ]
+            for warning in row["warnings"]:
+                lines.append(f"- Warning: {warning}")
+            lines += [
+                "",
+                "**Claim sheet** (fill in by reading each cited passage):",
+                "",
+                "| Claim | Cites | Supported? | Note |",
+                "| --- | --- | --- | --- |",
+            ]
+            for claim in row["claims"]:
+                lines.append(
+                    f"| {claim['claim']} | {', '.join(claim['cited']) or 'none'} |  |  |"
+                )
+            lines += [
+                "",
+                "<details><summary>Context sent to the model</summary>",
+                "",
+                "```text",
+                row["context"],
+                "```",
+                "",
+                "</details>",
+            ]
+    return "\n".join(lines) + "\n"
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--answers", action="store_true", help="also generate answers")
     parser.add_argument(
-        "--answers", action="store_true", help="also generate answers with Groq"
+        "--k", type=int, default=5, help="passages retrieved per question"
+    )
+    parser.add_argument(
+        "--export", action="store_true", help="print the run as base64 tar.gz"
     )
     args = parser.parse_args()
+
     settings = Settings.load()
     index = Index(settings.rag_dir)
-    index.import_directory(settings.corpus)
-
-    lines = [
-        "# Evaluation run",
-        "",
-        f"Run {datetime.now(timezone.utc):%Y-%m-%d %H:%M} UTC. Top {K} passages per question. "
-        "Session recall: did the retrieved passages include every expected session?",
-        "",
-        "| # | Type | Expected | Keyword (exchange) | Vector (exchange) | Vector (fixed 500 chars) |",
-        "| --- | --- | --- | --- | --- | --- |",
-    ]
-    details = []
-    for qid, kind, question, must, extra in QUESTIONS:
-        runs = {
-            "keyword": index.keyword(question, k=K),
-            "vector": index.vector(question, k=K),
-            "fixed": index.vector(question, k=K, strategy="fixed"),
-        }
-        cells = []
-        for name, hits in runs.items():
-            found = set(_sessions(hits))
-            cells.append(
-                f"{', '.join(sorted(found)) or 'nothing'} ({_verdict(found, must)})"
-            )
-        expected = ", ".join(sorted(must)) or "none"
-        if extra:
-            expected += f" (also ok: {', '.join(sorted(extra))})"
-        lines.append(f"| {qid} | {kind} | {expected} | " + " | ".join(cells) + " |")
-        details.append((qid, question, runs))
-
-    bodies = index.bodies()
-    mentions = {
-        sid: len(re.findall(r"panic attack", body, re.I))
-        for sid, body in sorted(bodies.items())
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H%MZ")
+    meta = {
+        "run": f"{stamp}-k{args.k}",
+        "k": args.k,
+        "embedding": "all-MiniLM-L6-v2 (Chroma default, ONNX)",
+        "model": answering.model_name() if args.answers else None,
+        "sessions": len(index.sessions()),
     }
-    lines += [
-        "",
-        "## Q6: mentions are not events",
-        "",
-        f'The phrase "panic attack" appears {sum(mentions.values())} times across '
-        f"{sum(1 for n in mentions.values() if n)} sessions "
-        f"({', '.join(f'{k}: {v}' for k, v in mentions.items())}). The true count is 3 "
-        "(S01, S03, S05), so counting keyword matches gives the wrong answer.",
-        "",
-        "## Retrieved passages",
-    ]
-    for qid, question, runs in details:
-        lines += ["", f"### {qid}: {question}", ""]
-        for name, hits in runs.items():
-            ids = ", ".join(f"{h.chunk.id} ({h.score:.2f})" for h in hits) or "nothing"
-            lines.append(f"- **{name}:** {ids}")
+    rows = []
+    for qid, kind, question, expected, also_ok in QUESTIONS:
+        retrieved, vector_hits = run_retrievers(index, question, args.k)
+        row = {
+            "id": qid,
+            "type": kind,
+            "question": question,
+            "expected": expected,
+            "also_ok": also_ok,
+            "retrieved": retrieved,
+            "recall": {
+                n: recall({h["session"] for h in hits}, expected)
+                for n, hits in retrieved.items()
+            },
+        }
         if args.answers:
-            result = answering.answer(question, runs["vector"])
-            text = result.text.replace("\n", " ")
-            lines.append(f"- **answer (vector):** {text}")
-            for warning in result.warnings:
-                lines.append(f"  - warning: {warning}")
+            result = answering.answer(question, vector_hits)
+            row.update(
+                {
+                    "answer": result.text,
+                    "generated": result.generated,
+                    "warnings": result.warnings,
+                    "cited": result.cited,
+                    "context": result.context,
+                    "claims": claims(result.text, vector_hits),
+                }
+            )
+        rows.append(row)
 
-    out = Path(settings.database).parent / "evaluation.md"
-    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    print("\n".join(lines))
-    print(f"\nWrote {out}")
+    out = Path(settings.database).parent / "evaluation" / meta["run"]
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "results.json").write_text(
+        json.dumps({"meta": meta, "questions": rows}, indent=2), encoding="utf-8"
+    )
+    (out / "report.md").write_text(report(meta, rows), encoding="utf-8")
+    print(f"Wrote {out}")
+    if args.export:
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+            archive.add(out, arcname=meta["run"])
+        encoded = base64.b64encode(buffer.getvalue()).decode()
+        print("-----BEGIN EVALUATION-----")
+        for start in range(0, len(encoded), 150):
+            print(encoded[start : start + 150])
+        print("-----END EVALUATION-----")
     return 0
 
 

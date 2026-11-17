@@ -27,7 +27,12 @@ FRAME = "0 0 400 440"
 LINE = "#FFF4EA"
 BRAIN = ("#EC7FA5", "#E46F98")  # left, right hemisphere
 CORAL, PLUM, MARIGOLD, CREAM, SAGE, SAGE_DARK = (
-    "#F0604E", "#5E2464", "#F4A23B", "#FFF4E4", "#8DB9A6", "#5F8F7B",
+    "#F0604E",
+    "#5E2464",
+    "#F4A23B",
+    "#FFF4E4",
+    "#8DB9A6",
+    "#5F8F7B",
 )
 
 # Timeline, in seconds. Each stem rewinds, then regrows clean.
@@ -91,22 +96,46 @@ BLOOMS = [
     ("sprig-right", 276, 342, -40, f'<path d="{LEAF}" fill="{SAGE}"/>'),
     ("sprig-left", 125, 346, 220, f'<path d="{LEAF}" fill="{SAGE}"/>'),
     (
-        "top", 200, 100, 0,
+        "top",
+        200,
+        100,
+        0,
         f'<circle r="21" fill="{CORAL}"/>'
         f'<path d="M0,0 c4,-2 6,4 2,7 c-6,4 -12,-3 -9,-9 c4,-9 18,-8 20,2 '
         f'c2,12 -12,19 -22,12" fill="none" stroke="{CREAM}" stroke-width="2.2" '
         f'stroke-linecap="round"/>',
     ),
-    ("upper-left", 116, 130, -10, petals(5, 9, 9, 10, CREAM) + f'<circle r="6" fill="{MARIGOLD}"/>'),
     (
-        "upper-right", 290, 136, 8,
+        "upper-left",
+        116,
+        130,
+        -10,
+        petals(5, 9, 9, 10, CREAM) + f'<circle r="6" fill="{MARIGOLD}"/>',
+    ),
+    (
+        "upper-right",
+        290,
+        136,
+        8,
         f'<path d="M-13,-20 C-14,-8 -6,0 0,0 C6,0 14,-8 13,-20 L7,-32 L0,-22 '
         f'L-7,-32 Z" fill="{PLUM}"/>'
         f'<path d="M-6,-22 C-6,-12 -3,-6 0,-4" fill="none" stroke="#8E4A8F" '
         f'stroke-width="2" stroke-linecap="round"/>',
     ),
-    ("lower-left", 90, 276, 0, petals(12, 3.2, 10, 12, MARIGOLD) + '<circle r="7" fill="#B4471F"/>'),
-    ("lower-right", 313, 260, 15, petals(6, 6, 11, 11, CORAL) + f'<circle r="5" fill="{CREAM}"/>'),
+    (
+        "lower-left",
+        90,
+        276,
+        0,
+        petals(12, 3.2, 10, 12, MARIGOLD) + '<circle r="7" fill="#B4471F"/>',
+    ),
+    (
+        "lower-right",
+        313,
+        260,
+        15,
+        petals(6, 6, 11, 11, CORAL) + f'<circle r="5" fill="{CREAM}"/>',
+    ),
 ]
 
 
@@ -143,7 +172,9 @@ def strand(stem, rng, wander, start=STEM_ROOT):
     heading = -1.5708 + rng.uniform(-0.8, 0.8)  # roughly upward
     parts = []
     for ex, ey in ends(stem):
-        nx, ny = inside(ex + rng.uniform(-wander, wander), ey + rng.uniform(-wander, wander))
+        nx, ny = inside(
+            ex + rng.uniform(-wander, wander), ey + rng.uniform(-wander, wander)
+        )
         toward = atan2(ny - y, nx - x)
         side = rng.choice((-1, 1))
         turn = toward + side * rng.uniform(1.3, 2.4)
@@ -235,16 +266,22 @@ def build(animated: bool) -> str:
         for copy in range(STRANDS_PER_STEM):
             rng = random.Random(index * 31 + copy * 7 + 5)
             first = ends(stem)[0]
-            begin_at = STEM_ROOT if copy == 0 else inside(
-                first[0] + rng.uniform(-40, 40), first[1] + rng.uniform(-50, 10)
+            begin_at = (
+                STEM_ROOT
+                if copy == 0
+                else inside(
+                    first[0] + rng.uniform(-40, 40), first[1] + rng.uniform(-50, 10)
+                )
             )
             messy = strand(stem, rng, wander=24 + 20 * copy, start=begin_at)
             pull = rewind + 0.08 * copy
             out.append(
                 f'<path d="{messy}" pathLength="1" stroke-dasharray="1">'
                 + keyed(
-                    "stroke-dashoffset", ["1", "0", "0", "1", "1"],
-                    [0, DRAW_IN, pull, pull + REWIND, DURATION], [EASE, EASE, PULL, EASE],
+                    "stroke-dashoffset",
+                    ["1", "0", "0", "1", "1"],
+                    [0, DRAW_IN, pull, pull + REWIND, DURATION],
+                    [EASE, EASE, PULL, EASE],
                 )
                 + hidden_after(pull + REWIND - 0.02)
                 + "</path>"
@@ -253,8 +290,10 @@ def build(animated: bool) -> str:
         out.append(
             f'<path d="{clean}" pathLength="1" stroke-dasharray="1">'
             + keyed(
-                "stroke-dashoffset", ["1", "1", "0", "0"],
-                [0, regrow, regrow + REGROW, DURATION], [EASE, GROW, EASE],
+                "stroke-dashoffset",
+                ["1", "1", "0", "0"],
+                [0, regrow, regrow + REGROW, DURATION],
+                [EASE, GROW, EASE],
             )
             + shown_after(regrow + 0.02)
             + "</path>"
@@ -284,7 +323,9 @@ def main():
     partials = ROOT / "app" / "templates" / "partials"
     partials.mkdir(exist_ok=True)
     (partials / "brain_bloom.svg").write_text(build(animated=True), encoding="utf-8")
-    (ROOT / "app" / "static" / "logo.svg").write_text(build(animated=False), encoding="utf-8")
+    (ROOT / "app" / "static" / "logo.svg").write_text(
+        build(animated=False), encoding="utf-8"
+    )
     print("wrote partials/brain_bloom.svg and static/logo.svg")
 
 

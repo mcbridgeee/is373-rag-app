@@ -2,7 +2,7 @@
 {% block title %}Ask · {{ brand.name }}{% endblock %}
 {% block content %}
 <section class="form-stack wide" aria-labelledby="ask-title">
-  <p class="eyebrow">client: Jenny Alvarez (fictional) · 6 sessions</p>
+  <p class="eyebrow">client: {{ client.label }}</p>
   <h1 id="ask-title">Ask about past sessions</h1>
   {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
   <form class="ask-form" method="post" action="/ask">

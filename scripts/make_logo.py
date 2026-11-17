@@ -22,7 +22,7 @@ from pathlib import Path
 import random
 
 ROOT = Path(__file__).resolve().parents[1]
-DURATION = 5.6  # seconds for the whole story
+DURATION = 7.5  # seconds for the whole story
 FRAME = "0 0 400 440"
 EASE = "0.45 0 0.25 1"
 LINE = "#FFF4EA"
@@ -46,52 +46,56 @@ BLOOMS = [
     {  # coral, top center
         "stem": ["C199,330 201,250 200,196", "C199,160 202,128 201,112", "C201,106 200,100 200,96"],
         "center": (200, 96), "petals": [-90 + 60 * i for i in range(6)],
-        "length": 34, "spread": 0.55, "fill": "#F0604E", "dot": "#FFF4E4", "start": 0.70,
+        "length": 34, "spread": 0.55, "fill": "#F0604E", "dot": "#FFF4E4",
     },
     {  # cream five-petal, upper left
         "stem": ["C200,340 198,292 188,252", "C176,206 140,198 126,168", "C120,154 117,140 116,128"],
         "center": (116, 128), "petals": [-90 + 72 * i for i in range(5)],
-        "length": 30, "spread": 0.65, "fill": "#FFF4E4", "dot": "#F4A23B", "start": 0.73,
+        "length": 30, "spread": 0.65, "fill": "#FFF4E4", "dot": "#F4A23B",
     },
     {  # plum tulip, upper right
         "stem": ["C201,336 204,288 214,250", "C226,206 266,198 280,168", "C285,156 288,144 290,132"],
         "center": (290, 132), "petals": [-122, -90, -58],
-        "length": 38, "spread": 0.42, "fill": "#5E2464", "dot": None, "start": 0.75,
+        "length": 38, "spread": 0.42, "fill": "#5E2464", "dot": None,
     },
     {  # marigold, lower left
         "stem": ["C196,360 182,336 160,320", "C136,302 110,306 100,292", "C95,286 92,280 90,274"],
         "center": (90, 274), "petals": [-90 + 36 * i for i in range(10)],
-        "length": 28, "spread": 0.3, "fill": "#F4A23B", "dot": "#B4471F", "start": 0.78,
+        "length": 28, "spread": 0.3, "fill": "#F4A23B", "dot": "#B4471F",
     },
     {  # butter-yellow star, lower right
         "stem": ["C206,358 222,334 246,318", "C272,300 298,300 306,284", "C310,276 312,266 313,258"],
         "center": (313, 258), "petals": [-75 + 60 * i for i in range(6)],
-        "length": 31, "spread": 0.36, "fill": "#FFD27A", "dot": "#F0604E", "start": 0.81,
+        "length": 31, "spread": 0.36, "fill": "#FFD27A", "dot": "#F0604E",
     },
     {  # leafy sprig, right
         "stem": ["C210,384 222,378 234,374", "C246,370 256,366 264,358", "C268,354 272,348 276,342"],
         "center": (276, 342), "petals": [-42], "length": 32, "spread": 0.55,
-        "fill": "#8DB9A6", "dot": None, "start": 0.68,
+        "fill": "#8DB9A6", "dot": None,
     },
     {  # leafy sprig, left
         "stem": ["C190,386 178,380 166,376", "C154,372 144,366 136,360", "C131,356 128,352 125,346"],
         "center": (125, 346), "petals": [-140], "length": 32, "spread": 0.55,
-        "fill": "#5F8F7B", "dot": None, "start": 0.69,
+        "fill": "#5F8F7B", "dot": None,
     },
 ]
 
 # Leaves along the stems: (where it sprouts, angle, color, start of color wash).
 LEAVES = [
-    ((190, 250), 200, "#8DB9A6", 0.70),
-    ((213, 246), -25, "#5F8F7B", 0.71),
-    ((200, 178), 205, "#5F8F7B", 0.72),
-    ((200, 222), -20, "#8DB9A6", 0.74),
+    ((190, 250), 200, "#8DB9A6", None),
+    ((213, 246), -25, "#5F8F7B", None),
+    ((200, 178), 205, "#5F8F7B", None),
+    ((200, 222), -20, "#8DB9A6", None),
 ]
 LEAF_LENGTH, LEAF_SPREAD = 28, 0.5
 
 # Timeline (fractions of DURATION): draw the tangle, hold, then untangle.
-DRAWN, UNTANGLE_FROM, UNTANGLE_TO = 0.30, 0.36, 0.70
-WASH = 0.13  # how long each bloom's color takes to come in
+DRAWN = 0.26  # the tangle has finished drawing in
+UNTANGLE_FROM = 0.30  # the lowest line starts to settle
+UNTANGLE_LENGTH = 0.40  # how long one line takes to settle
+STAGGER = 0.018  # delay between neighboring lines, bottom to top
+SETTLE_EASE = "0.4 0 0.2 1"  # slow start, long gentle landing
+WASH = 0.10  # how long each bloom's color takes to come in
 
 
 def point(x, y):
@@ -118,38 +122,52 @@ def inside(x, y):
     return cx + dx / distance * rx, cy + dy / distance * ry
 
 
-def scribble(start, curves, seed, drift=(0, -1)):
-    """A smooth, loopy line with the same number of curves as the clean path.
+def numbers(curve):
+    """'C x1,y1 x2,y2 x,y' -> [(x1, y1), (x2, y2), (x, y)]"""
+    values = [float(v) for v in curve[1:].replace(",", " ").split()]
+    return list(zip(values[0::2], values[1::2]))
 
-    Each curve leaves in the direction the previous one arrived (so there are
-    no corners), swings wide and crosses itself (the loop), then exits at a
-    new angle. The ends are kept inside the brain; the lines are clipped to it.
-    """
-    rng = random.Random(seed)
-    x, y = start
-    heading = -pi / 2 + rng.uniform(-0.7, 0.7)
+
+def jitter(rng, x, y, amount):
+    return inside(x + rng.uniform(-amount, amount), y + rng.uniform(-amount, amount))
+
+
+def loose_stem(curves, rng):
+    """The stem, but curling into a loop on every curve, near where it ends up."""
+    x, y = STEM_ROOT
     parts = []
-    for index in range(curves):
+    for curve in curves:
+        _, _, (ex, ey) = numbers(curve)
+        nx, ny = jitter(rng, ex, ey, 18)
+        dx, dy = nx - x, ny - y
+        size = (dx * dx + dy * dy) ** 0.5 or 1
+        ux, uy = dx / size, dy / size
         side = rng.choice((-1, 1))
-        pull = 1.0 if index < 2 else 0.1
-        step = rng.uniform(34, 82)
-        aim = heading - side * rng.uniform(0.5, 1.1)
-        nx = x + step * cos(aim) + drift[0] * 26 * pull
-        ny = y + step * sin(aim) + drift[1] * 26 * pull
-        nx, ny = inside(nx, ny)
-        turn = heading + side * rng.uniform(1.6, 2.7)
-        reach_in, reach_out = rng.uniform(70, 120), rng.uniform(60, 110)
-        p1 = (x + reach_in * cos(heading), y + reach_in * sin(heading))
-        p2 = (nx - reach_out * cos(turn), ny - reach_out * sin(turn))
+        lift = side * rng.uniform(30, 62)
+        over = size * rng.uniform(1.2, 1.6)
+        # P1 overshoots past the end and P2 starts behind the start: a loop.
+        p1 = (x + ux * over - uy * lift, y + uy * over + ux * lift)
+        p2 = (nx - ux * over - uy * lift, ny - uy * over + ux * lift)
         parts.append(f"C{point(*p1)} {point(*p2)} {point(nx, ny)}")
-        x, y, heading = nx, ny, turn
-    return " ".join(parts)
+        x, y = nx, ny
+    return " ".join(parts), (x, y)
 
 
-def animate(attribute, values, times, spline=True):
+def loose_petal(start, center, angle, length, spread, rng):
+    """A petal, but big, loose and off-center: the same loop before it tightens."""
+    end = jitter(rng, *center, 26)
+    reach = length * rng.uniform(1.9, 2.8) / 0.75
+    theta = angle * pi / 180 + rng.uniform(-0.9, 0.9)
+    wide = rng.uniform(0.8, 1.2)
+    p1 = (start[0] + reach * cos(theta - wide), start[1] + reach * sin(theta - wide))
+    p2 = (end[0] + reach * cos(theta + wide), end[1] + reach * sin(theta + wide))
+    return f"C{point(*p1)} {point(*p2)} {point(*end)}", end
+
+
+def animate(attribute, values, times, spline=True, ease=None):
     curve = ""
     if spline:
-        curve = f' calcMode="spline" keySplines="{";".join([EASE] * (len(values) - 1))}"'
+        curve = f' calcMode="spline" keySplines="{";".join([ease or EASE] * (len(values) - 1))}"'
     return (
         f'<animate attributeName="{attribute}" values="{";".join(values)}" '
         f'keyTimes="{";".join(f"{t:g}" for t in times)}"{curve} '
@@ -198,13 +216,23 @@ def build(animated: bool) -> str:
         "</g></g>",
     ]
 
+    # Lower parts untangle first, so the plant seems to settle from the
+    # stem upward. settle[...] is when each line finishes untangling.
+    order = sorted(
+        [(("bloom", i), b["center"][1]) for i, b in enumerate(BLOOMS)]
+        + [(("leaf", i), leaf[0][1]) for i, leaf in enumerate(LEAVES)],
+        key=lambda item: -item[1],
+    )
+    begins = {key: UNTANGLE_FROM + STAGGER * rank for rank, (key, _) in enumerate(order)}
+    settle = {key: begin + UNTANGLE_LENGTH for key, begin in begins.items()}
+
     # Color layer, under the lines: each flower's petals filled in.
-    for bloom in BLOOMS:
+    for index, bloom in enumerate(BLOOMS):
         petals = "".join(
             loop_curve((0, 0), angle, bloom["length"], bloom["spread"])
             for angle in bloom["petals"]
         )
-        fade, swell = wash(bloom["start"]) if animated else ("", "")
+        fade, swell = wash(settle[("bloom", index)] - 0.05) if animated else ("", "")
         cx, cy = bloom["center"]
         out.append(
             f'<g transform="translate({point(cx, cy)})"><g>'
@@ -212,15 +240,16 @@ def build(animated: bool) -> str:
         )
     leaf_lines = []
     for index, (base, angle, color, start) in enumerate(LEAVES):
-        fade, swell = wash(start) if animated else ("", "")
+        fade, swell = wash(settle[("leaf", index)] - 0.04) if animated else ("", "")
         shape = loop_curve((0, 0), angle, LEAF_LENGTH, LEAF_SPREAD)
         out.append(
             f'<g transform="translate({point(*base)})"><g>'
             f'<path d="M0,0 {shape}" fill="{color}">{fade}</path>{swell}</g></g>'
         )
         clean = f"M{point(*base)} {loop_curve(base, angle, LEAF_LENGTH, LEAF_SPREAD)}"
-        messy = f"M{point(*base)} {scribble(base, 1, seed=100 + index, drift=(0, 0))}"
-        leaf_lines.append((messy, clean))
+        rng = random.Random(100 + index)
+        loop, _ = loose_petal(base, base, angle, LEAF_LENGTH, LEAF_SPREAD, rng)
+        leaf_lines.append((f"M{point(*base)} {loop}", clean, base[1]))
 
     # Line layer: the tangle that becomes stems, petals and leaves.
     out.append(
@@ -234,24 +263,33 @@ def build(animated: bool) -> str:
             for angle in bloom["petals"]
         )
         clean = f"M{point(*STEM_ROOT)} {' '.join(bloom['stem'])} {petals}"
-        curves = 3 + len(bloom["petals"])
-        messy = f"M{point(*STEM_ROOT)} {scribble(STEM_ROOT, curves, seed=index * 7 + 3)}"
-        lines.append((messy, clean))
-    for messy, clean in lines + leaf_lines:
+        rng = random.Random(index * 7 + 3)
+        stem, here = loose_stem(bloom["stem"], rng)
+        loops = []
+        for angle in bloom["petals"]:
+            loop, here = loose_petal(
+                here, bloom["center"], angle, bloom["length"], bloom["spread"], rng
+            )
+            loops.append(loop)
+        messy = f"M{point(*STEM_ROOT)} {stem} {' '.join(loops)}"
+        lines.append((messy, clean, ("bloom", index)))
+    leaf_lines = [(m, c, ("leaf", i)) for i, (m, c, _) in enumerate(leaf_lines)]
+    for messy, clean, key in lines + leaf_lines:
         motion = ""
         if animated:
+            start, end = begins[key], settle[key]
             motion = animate(
                 "stroke-dashoffset", ["1", "0", "0"], [0, DRAWN, 1]
             ) + animate(
-                "d", [messy, messy, clean, clean], [0, UNTANGLE_FROM, UNTANGLE_TO, 1]
+                "d", [messy, messy, clean, clean], [0, start, end, 1], ease=SETTLE_EASE
             )
         out.append(f'<path d="{clean}" pathLength="1" stroke-dasharray="1">{motion}</path>')
     out.append("</g>")
 
     # Flower centers sit on top, hiding where the petal lines meet.
-    for bloom in BLOOMS:
+    for index, bloom in enumerate(BLOOMS):
         if bloom["dot"]:
-            fade, _ = wash(bloom["start"] + 0.04) if animated else ("", "")
+            fade, _ = wash(settle[("bloom", index)]) if animated else ("", "")
             out.append(
                 f'<circle cx="{bloom["center"][0]}" cy="{bloom["center"][1]}" r="6" '
                 f'fill="{bloom["dot"]}">{fade}</circle>'

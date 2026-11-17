@@ -25,6 +25,9 @@ Rules:
 - If the passages do not answer the question, reply exactly: {NOT_MENTIONED}
 - For "how many" or "ever" questions, add one sentence saying you can only see
   the passages retrieved for this question, not every session.
+- Say what the client actually said or what happened, in plain words, then cite
+  it. A citation alone is not an answer: "She was up until 3 a.m. most nights
+  [S02-C004]" is right; "She mentioned it in [S02-C004]" is not.
 - Be brief: a few sentences or a short list, in session order."""
 
 

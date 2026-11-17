@@ -193,6 +193,25 @@ def signup(settings: Settings, username: str, password: str) -> dict[str, str]:
     return user
 
 
+def set_password(settings: Settings, username: str, password: str) -> bool:
+    """Replace one account's password and sign it out everywhere; False if unknown."""
+    credentials = SignupInput(username=username, password=password)
+    with connect(settings) as connection:
+        row = connection.execute(
+            "SELECT id FROM users WHERE username = ?", (credentials.username,)
+        ).fetchone()
+        if row is None:
+            return False
+        connection.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?",
+            (hash_password(credentials.password), row["id"]),
+        )
+        connection.execute(
+            "UPDATE sessions SET revoked = 1 WHERE user_id = ?", (row["id"],)
+        )
+    return True
+
+
 def _consume_buckets(
     request: Request, buckets: tuple[tuple[str, int], ...], action: str
 ) -> None:

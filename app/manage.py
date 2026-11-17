@@ -2,6 +2,7 @@
 
 python -m app.manage create-user demo            # password from NEW_USER_PASSWORD or a prompt
 python -m app.manage create-user bridge --admin
+python -m app.manage set-password demo           # signs the account out everywhere
 python -m app.manage import                      # re-import corpus/ (unchanged files are skipped)
 python -m app.manage stats
 """
@@ -24,6 +25,10 @@ def main(argv=None) -> int:
     user = commands.add_parser("create-user", help="create an account")
     user.add_argument("username")
     user.add_argument("--admin", action="store_true")
+    reset = commands.add_parser(
+        "set-password", help="change an account's password and sign it out"
+    )
+    reset.add_argument("username")
     access = commands.add_parser(
         "grant", help="give a therapist access to the demo client"
     )
@@ -53,6 +58,24 @@ def main(argv=None) -> int:
         if args.admin:
             database.set_role(settings, args.username, "admin")
         print(f"created {args.username} ({'admin' if args.admin else 'member'})")
+        return 0
+
+    if args.command == "set-password":
+        password = os.environ.get("NEW_USER_PASSWORD") or getpass.getpass(
+            "New password (15+ characters): "
+        )
+        try:
+            changed = security.set_password(settings, args.username, password)
+        except ValueError:
+            print(
+                "Use a 3-32 character username and a 15-128 character password.",
+                file=sys.stderr,
+            )
+            return 1
+        if not changed:
+            print(f"No account named {args.username}.", file=sys.stderr)
+            return 1
+        print(f"{args.username}: password changed, all sessions signed out")
         return 0
 
     with database.connect(settings) as connection:

@@ -2,6 +2,8 @@
 
 A small RAG app for IS 373. A therapist asks a question about a client in their own words, and the app answers only from that client's session transcripts, linking every claim to the passage it came from. When the transcripts don't cover something, it says so.
 
+Agreed decisions, evidence and links to every issue are in [SPEC.md](SPEC.md).
+
 All six transcripts are fictional: one invented client (Jenny Alvarez) and therapist (Dr. Aris Thorne) over six weekly sessions. This is a class prototype, so it is not a clinical tool and must not hold real patient data. The planning record, including the decision trail and evaluation questions, lives in [is373-individual-planning](https://github.com/mcbridgeee/is373-individual-planning/blob/main/2-rag-technical.md).
 
 ## How it works

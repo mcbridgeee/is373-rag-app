@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Upload · {{ brand.name }}{% endblock %}
+{% block content %}
+<section class="form-stack wide" aria-labelledby="upload-title">
+  <p class="eyebrow">client: {{ client.label }}</p>
+  <h1 id="upload-title">Upload a session transcript</h1>
+  <p>Upload one session as a Markdown file exported from your recording tool, with its session ID and date at the top. Uploading the same file again changes nothing; uploading a new version of a session replaces its old passages.</p>
+  {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+  {% if notice %}<p class="notice" role="status">{{ notice }} <a class="text-link" href="/sessions/{{ session_id }}">Open it</a></p>{% endif %}
+  <form method="post" action="/upload" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="transcript">Transcript file (.md, up to 200 KB)</label>
+    <input id="transcript" name="transcript" type="file" accept=".md,text/markdown" required>
+    <button class="button" type="submit">Upload <span aria-hidden="true">→</span></button>
+  </form>
+  <p class="examples">Demo only: never upload real client records. This prototype is not HIPAA compliant.</p>
+</section>
+{% endblock %}

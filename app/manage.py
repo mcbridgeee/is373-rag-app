@@ -13,7 +13,7 @@ import sys
 
 from fastapi import HTTPException
 
-from app import database, security
+from app import care, database, security
 from app.rag.store import Index
 from app.settings import Settings
 
@@ -24,6 +24,10 @@ def main(argv=None) -> int:
     user = commands.add_parser("create-user", help="create an account")
     user.add_argument("username")
     user.add_argument("--admin", action="store_true")
+    access = commands.add_parser(
+        "grant", help="give a therapist access to the demo client"
+    )
+    access.add_argument("username")
     commands.add_parser("import", help="import the transcripts in the corpus folder")
     commands.add_parser("stats", help="show what is indexed")
     args = parser.parse_args(argv)
@@ -49,6 +53,21 @@ def main(argv=None) -> int:
         if args.admin:
             database.set_role(settings, args.username, "admin")
         print(f"created {args.username} ({'admin' if args.admin else 'member'})")
+        return 0
+
+    with database.connect(settings) as connection:
+        connection.executescript(care.SCHEMA)
+    if args.command == "grant":
+        try:
+            changed = care.change(
+                settings, "server-terminal", args.username, grant=True
+            )
+        except ValueError as error:
+            print(error, file=sys.stderr)
+            return 1
+        print(
+            f"{args.username}: {'access granted' if changed else 'already had access'}"
+        )
         return 0
 
     index = Index(settings.rag_dir)

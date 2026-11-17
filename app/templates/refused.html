@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}No access · {{ brand.name }}{% endblock %}
+{% block content %}
+<section class="form-stack" aria-labelledby="refused-title">
+  <p class="eyebrow">no access</p>
+  <h1 id="refused-title">You can't open this client's records</h1>
+  <p>{{ message }}</p>
+  <p><a class="text-link" href="/dashboard">Back to your account</a></p>
+</section>
+{% endblock %}

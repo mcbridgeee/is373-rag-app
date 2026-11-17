@@ -120,3 +120,7 @@ code{font-size:.9em;overflow-wrap:anywhere}
 .session-list{list-style:none;padding:0}
 .session-list li{padding:14px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:16px}
 .form-stack.wide{max-width:760px}
+.inline-form{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin:0}
+.text-button{font:inherit;background:none;border:0;padding:0;color:var(--ink);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.text-button:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
+input[type=file]{display:block;margin:8px 0 16px;font:inherit}

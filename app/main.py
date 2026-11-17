@@ -1,4 +1,4 @@
-"""Session-notes assistant: the App Studio account base plus transcript retrieval."""
+"""Throughline: the App Studio account base plus transcript retrieval for therapists."""
 
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -11,6 +11,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app import branding, database, security
+from app import care
 from app.features import accounts, ask, roles
 from app.rag.store import Index
 from app.settings import Settings
@@ -22,9 +23,15 @@ def create_app(settings=None, embedder=None, import_vectors=True):
     """Create an isolated testable app; no test uses real runtime data."""
     settings = settings or Settings.load()
     database.initialize(settings)
+    with database.connect(settings) as connection:
+        connection.executescript(care.SCHEMA)
     rag = Index(settings.rag_dir, embedder=embedder)
     rag.import_directory(settings.corpus, vectors=import_vectors)
-    application = FastAPI(title="Session Notes", docs_url=None, redoc_url=None)
+    # Uploaded versions win over the bundled ones, so a restart keeps them.
+    uploaded = settings.rag_dir.parent / "uploads"
+    if uploaded.is_dir():
+        rag.import_directory(uploaded, vectors=import_vectors)
+    application = FastAPI(title="Throughline", docs_url=None, redoc_url=None)
     application.state.rag = rag
     application.add_middleware(
         TrustedHostMiddleware,

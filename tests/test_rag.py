@@ -23,7 +23,10 @@ PASSPHRASE = "a long enough test passphrase"
 def _login(client):
     from app import security  # pylint: disable=import-outside-toplevel
 
+    from app import care  # pylint: disable=import-outside-toplevel
+
     security.signup(client.app.state.settings, "therapist", PASSPHRASE)
+    care.change(client.app.state.settings, "test-admin", "therapist", grant=True)
     token = client.get("/api/csrf").json()["csrf_token"]
     response = client.post(
         "/api/login",

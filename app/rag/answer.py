@@ -40,6 +40,10 @@ class Answer:
     cited: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     generated: bool = False
+    model: str = ""  # which model wrote the answer, when one did
+    context: str = (
+        ""  # the exact passages text sent to the model, for evaluation records
+    )
 
 
 def _passages(hits: list[Hit]) -> str:
@@ -50,10 +54,14 @@ def _passages(hits: list[Hit]) -> str:
     )
 
 
+def model_name() -> str:
+    return os.environ.get("GROQ_MODEL", DEFAULT_MODEL)
+
+
 def _call_groq(question: str, hits: list[Hit], key: str) -> str:
     """One chat completion. Retries once without optional fields if Groq rejects them."""
     body = {
-        "model": os.environ.get("GROQ_MODEL", DEFAULT_MODEL),
+        "model": model_name(),
         "temperature": 0,
         "max_completion_tokens": MAX_OUTPUT_TOKENS,
         "reasoning_effort": "low",
@@ -113,7 +121,15 @@ def answer(question: str, hits: list[Hit], generate=None) -> Answer:
             hits=hits,
         )
     cited, warnings = check_citations(text, hits)
-    return Answer(text=text, hits=hits, cited=cited, warnings=warnings, generated=True)
+    return Answer(
+        text=text,
+        hits=hits,
+        cited=cited,
+        warnings=warnings,
+        generated=True,
+        model="test" if generate is not None else model_name(),
+        context=_passages(hits),
+    )
 
 
 def segments(text: str) -> list[tuple[str, str | None]]:

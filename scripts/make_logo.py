@@ -4,11 +4,11 @@ into stems, then pop open into flowers and leaves.
     python scripts/make_logo.py
 
 How it moves:
-- Several loopy strands start at the brain stem and wander up toward each
-  flower. Every strand's loops sit near the stem it belongs to.
-- The strands settle from the bottom up. Each one tightens into its stem, so
-  the extra strands merge into the stems instead of fading away.
-- Once a stem has settled, its flower and leaves pop open.
+- Loopy strands draw themselves in, each wandering along one stem's route.
+- From the bottom up, each tangled strand rewinds: it pulls back along its own
+  path, undoing its loops, like thread being reeled in.
+- Its stem then grows back out clean from the brain stem. Leaves open as the
+  stem passes them, and the flower opens when the stem reaches it.
 
 Writes two files from the same shapes:
 - app/templates/partials/brain_bloom.svg  animated, inlined on the home page
@@ -30,16 +30,19 @@ CORAL, PLUM, MARIGOLD, CREAM, SAGE, SAGE_DARK = (
     "#F0604E", "#5E2464", "#F4A23B", "#FFF4E4", "#8DB9A6", "#5F8F7B",
 )
 
-# Timeline, as fractions of DURATION.
-DURATION = 7.0  # seconds
-DRAWN = 0.24  # the strands have finished drawing in
-SETTLE_FROM = 0.28  # the lowest stem starts to straighten
-SETTLE_LENGTH = 0.36  # how long one stem takes to straighten
-STAGGER = 0.045  # delay between stems, bottom to top
-POP = 0.11  # how long a flower or leaf takes to open
+# Timeline, in seconds. Each stem rewinds, then regrows clean.
+DURATION = 6.6
+DRAW_IN = 1.4  # the tangle draws itself in
+REWIND_FROM = 1.8  # the lowest stem starts pulling back
+REWIND = 0.75  # one tangled line pulling back along itself
+REGROW = 0.7  # the clean stem growing back out
+OVERLAP = 0.4  # regrowth starts while the rewind is still reeling in
+STAGGER = 0.3  # delay between stems, bottom to top
+POP = 0.7  # how long a flower or leaf takes to open
 EASE = "0.45 0 0.25 1"
-SETTLE_EASE = "0.4 0 0.2 1"  # slow start, long gentle landing
-STRANDS_PER_STEM = 2  # the stem itself plus one strand that merges into it
+PULL = "0.5 0 0.9 0.6"  # rewinding speeds up, like thread being pulled in
+GROW = "0.2 0.6 0.4 1"  # regrowth starts fast and lands softly
+STRANDS_PER_STEM = 2  # each stem's tangle is drawn as two lines
 SIZE = 1.5  # flowers and leaves, relative to their drawn size
 
 LEFT = (
@@ -77,11 +80,14 @@ def petals(count, rx, ry, distance, fill):
 
 LEAF = "M0,0 C6,-10 18,-12 26,-6 C18,2 8,4 0,0 Z"
 
-# What opens on each stem: (stem, x, y, rotation, shape).
+# Leaves open as the regrowing stem passes them: (stem, x, y, rotation, shape,
+# how far along the stem). Flowers open when the stem reaches them.
+LEAVES = [
+    ("upper-left", 190, 246, 200, f'<path d="{LEAF}" fill="{SAGE}"/>', 0.45),
+    ("upper-right", 215, 244, -20, f'<path d="{LEAF}" fill="{SAGE_DARK}"/>', 0.45),
+    ("top", 200, 170, 210, f'<path d="{LEAF}" fill="{SAGE_DARK}"/>', 0.75),
+]
 BLOOMS = [
-    ("upper-left", 190, 246, 200, f'<path d="{LEAF}" fill="{SAGE}"/>'),
-    ("upper-right", 215, 244, -20, f'<path d="{LEAF}" fill="{SAGE_DARK}"/>'),
-    ("top", 200, 170, 210, f'<path d="{LEAF}" fill="{SAGE_DARK}"/>'),
     ("sprig-right", 276, 342, -40, f'<path d="{LEAF}" fill="{SAGE}"/>'),
     ("sprig-left", 125, 346, 220, f'<path d="{LEAF}" fill="{SAGE}"/>'),
     (
@@ -149,32 +155,45 @@ def strand(stem, rng, wander, start=STEM_ROOT):
     return f"M{point(*start)} " + " ".join(parts)
 
 
-def animate(attribute, values, times, ease=EASE):
-    splines = ";".join([ease] * (len(values) - 1))
+def keyed(attribute, values, times, eases):
+    """One <animate> on the shared timeline. times are in seconds."""
     return (
         f'<animate attributeName="{attribute}" values="{";".join(values)}" '
-        f'keyTimes="{";".join(f"{t:.3f}" for t in times)}" calcMode="spline" '
-        f'keySplines="{splines}" dur="{DURATION}s" begin="0s" fill="freeze"/>'
+        f'keyTimes="{";".join(f"{t / DURATION:.4f}" for t in times)}" '
+        f'calcMode="spline" keySplines="{";".join(eases)}" '
+        f'dur="{DURATION}s" begin="0s" fill="freeze"/>'
+    )
+
+
+def hidden_after(moment):
+    """Switch a line off once it has fully rewound (its round end leaves a dot)."""
+    return f'<set attributeName="opacity" to="0" begin="{moment:.2f}s" fill="freeze"/>'
+
+
+def shown_after(moment):
+    """Keep a line hidden until it starts growing, for the same reason."""
+    return (
+        f'<set attributeName="opacity" to="0" begin="0s" fill="freeze"/>'
+        f'<set attributeName="opacity" to="1" begin="{moment:.2f}s" fill="freeze"/>'
     )
 
 
 def pop(start):
-    """Open from nothing with a small overshoot, like the first version."""
-    end = min(start + POP, 1)
+    """Open from nothing with a small overshoot. start is in seconds."""
+    end = min(start + POP, DURATION - 0.01)
     peak = start + (end - start) * 0.65
+    times = ";".join(f"{t / DURATION:.4f}" for t in (0, start, peak, end, DURATION))
     return (
         f'<animateTransform attributeName="transform" type="scale" '
-        f'values="0;0;1.15;1;1" keyTimes="0;{start:.3f};{peak:.3f};{end:.3f};1" '
-        f'calcMode="spline" keySplines="{";".join([EASE] * 4)}" '
-        f'dur="{DURATION}s" begin="0s" fill="freeze"/>'
+        f'values="0;0;1.15;1;1" keyTimes="{times}" calcMode="spline" '
+        f'keySplines="{";".join([EASE] * 4)}" dur="{DURATION}s" begin="0s" fill="freeze"/>'
     )
 
 
 def build(animated: bool) -> str:
     # Lower stems settle first, so the plant seems to grow upward.
     order = sorted(STEMS, key=lambda name: -ends(STEMS[name])[-1][1])
-    begins = {name: SETTLE_FROM + STAGGER * rank for rank, name in enumerate(order)}
-    settled = {name: begin + SETTLE_LENGTH for name, begin in begins.items()}
+    begins = {name: REWIND_FROM + STAGGER * rank for rank, name in enumerate(order)}
 
     out = [
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{FRAME}" '
@@ -203,32 +222,56 @@ def build(animated: bool) -> str:
         f'<g fill="none" stroke="{LINE}" stroke-width="3" stroke-linecap="round" '
         f'stroke-linejoin="round" clip-path="url(#bb-brain)">',
     ]
+    reached = {}
     for index, (name, stem) in enumerate(STEMS.items()):
         clean = f"M{point(*STEM_ROOT)} {stem}"
-        strands = STRANDS_PER_STEM if animated else 1
-        for copy in range(strands):
-            motion = ""
-            if animated:
-                rng = random.Random(index * 31 + copy * 7 + 5)
-                first = ends(stem)[0]
-                begin_at = STEM_ROOT if copy == 0 else inside(
-                    first[0] + rng.uniform(-40, 40), first[1] + rng.uniform(-50, 10)
+        if not animated:
+            out.append(f'<path d="{clean}"/>')
+            continue
+        rewind = begins[name]
+        regrow = rewind + REWIND - OVERLAP
+        reached[name] = (regrow, regrow + REGROW)
+        # The tangle: draws in, waits, then pulls back along itself.
+        for copy in range(STRANDS_PER_STEM):
+            rng = random.Random(index * 31 + copy * 7 + 5)
+            first = ends(stem)[0]
+            begin_at = STEM_ROOT if copy == 0 else inside(
+                first[0] + rng.uniform(-40, 40), first[1] + rng.uniform(-50, 10)
+            )
+            messy = strand(stem, rng, wander=24 + 20 * copy, start=begin_at)
+            pull = rewind + 0.08 * copy
+            out.append(
+                f'<path d="{messy}" pathLength="1" stroke-dasharray="1">'
+                + keyed(
+                    "stroke-dashoffset", ["1", "0", "0", "1", "1"],
+                    [0, DRAW_IN, pull, pull + REWIND, DURATION], [EASE, EASE, PULL, EASE],
                 )
-                messy = strand(stem, rng, wander=24 + 20 * copy, start=begin_at)
-                # Extra strands settle a beat after the stem and land on it.
-                start = begins[name] + 0.02 * copy
-                end = settled[name] + 0.02 * copy
-                motion = animate(
-                    "stroke-dashoffset", ["1", "0", "0"], [0, DRAWN, 1]
-                ) + animate(
-                    "d", [messy, messy, clean, clean], [0, start, min(end, 0.99), 1],
-                    ease=SETTLE_EASE,
-                )
-            out.append(f'<path d="{clean}" pathLength="1" stroke-dasharray="1">{motion}</path>')
+                + hidden_after(pull + REWIND - 0.02)
+                + "</path>"
+            )
+        # The clean stem grows back out from the brain stem.
+        out.append(
+            f'<path d="{clean}" pathLength="1" stroke-dasharray="1">'
+            + keyed(
+                "stroke-dashoffset", ["1", "1", "0", "0"],
+                [0, regrow, regrow + REGROW, DURATION], [EASE, GROW, EASE],
+            )
+            + shown_after(regrow + 0.02)
+            + "</path>"
+        )
     out.append("</g>")
 
+    for name, x, y, turn, shape, along in LEAVES:
+        grow = ""
+        if animated:
+            start, end = reached[name]
+            grow = pop(start + (end - start) * along)
+        out.append(
+            f'<g transform="translate({x},{y}) rotate({turn}) scale({SIZE})">'
+            f"<g>{shape}{grow}</g></g>"
+        )
     for name, x, y, turn, shape in BLOOMS:
-        grow = pop(settled[name] - 0.06) if animated else ""
+        grow = pop(reached[name][1] - 0.12) if animated else ""
         out.append(
             f'<g transform="translate({x},{y}) rotate({turn}) scale({SIZE})">'
             f"<g>{shape}{grow}</g></g>"

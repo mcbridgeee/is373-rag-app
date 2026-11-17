@@ -254,3 +254,12 @@ def test_hosted_signup_is_closed(settings):
             headers={"X-CSRF-Token": token},
         )
         assert response.status_code == 403
+
+
+def test_static_files_are_versioned_and_rechecked(client):
+    """A deploy must never be hidden by a browser's stale copy of the CSS or logo."""
+    page = client.get("/").text
+    version = client.app.state.templates.env.globals["asset_version"]
+    assert f"/static/site.css?v={version}" in page
+    assert f"/static/logo.svg?v={version}" in page
+    assert client.get("/static/site.css").headers["cache-control"] == "no-cache"

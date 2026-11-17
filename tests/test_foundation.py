@@ -12,7 +12,7 @@ def test_home_and_health_are_real_routes(client):
     page = client.get("/")
     assert page.status_code == 200
     assert '<html lang="en">' in page.text
-    assert 'href="/static/site.css"' in page.text
+    assert 'href="/static/site.css?v=' in page.text
     assert client.get("/static/site.css").status_code == 200
     assert client.get("/static/logo.svg").status_code == 200
     assert client.get("/docs").status_code == 200

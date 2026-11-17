@@ -8,14 +8,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="{{ brand.summary }}">
   <title>{% block title %}{{ brand.name }}{% endblock %}</title>
-  <link rel="icon" type="image/svg+xml" href="/static/logo.svg">
+  <link rel="icon" type="image/svg+xml" href="/static/logo.svg?v={{ asset_version }}">
   <link rel="stylesheet" href="/brand.css">
-  <link rel="stylesheet" href="/static/site.css">
+  <link rel="stylesheet" href="/static/site.css?v={{ asset_version }}">
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="site-header wrap">
-    <a class="wordmark" href="/" aria-label="{{ brand.name }} home"><img src="/static/logo.svg" alt="" width="36" height="36">{{ brand.name }}</a>
+    <a class="wordmark" href="/" aria-label="{{ brand.name }} home"><img src="/static/logo.svg?v={{ asset_version }}" alt="" width="36" height="36">{{ brand.name }}</a>
     <nav aria-label="Main navigation">
       {% if current_user and current_user.role == "admin" %}<a href="/admin">Access</a><a href="/dashboard">Account</a>
       {% elif current_user %}<a href="/ask">Ask</a><a href="/sessions">Sessions</a><a href="/upload">Upload</a><a href="/dashboard">Account</a>

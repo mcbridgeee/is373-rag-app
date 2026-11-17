@@ -1,5 +1,6 @@
 """Throughline: the App Studio account base plus transcript retrieval for therapists."""
 
+import hashlib
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -42,6 +43,14 @@ def create_app(settings=None, embedder=None, import_vectors=True):
     application.state.current_user = security.authenticate
     application.state.brand = branding.load_brand
     application.state.templates = Jinja2Templates(directory=APP_ROOT / "templates")
+    # A short fingerprint of the static files, added to their URLs so browsers
+    # that cached an older copy fetch the new one after a deploy.
+    fingerprint = hashlib.sha256()
+    for asset in sorted((APP_ROOT / "static").glob("*.*")):
+        fingerprint.update(asset.read_bytes())
+    application.state.templates.env.globals["asset_version"] = fingerprint.hexdigest()[
+        :10
+    ]
     application.include_router(accounts.router)
     application.include_router(roles.router)
     application.include_router(ask.router)
@@ -75,6 +84,10 @@ def create_app(settings=None, embedder=None, import_vectors=True):
         )
         if not request.url.path.startswith("/static/"):
             response.headers["Cache-Control"] = "no-store"
+        else:
+            # Recheck static files on every visit (cheap: the ETag usually
+            # answers "not modified"), so a deploy is never hidden by a stale copy.
+            response.headers["Cache-Control"] = "no-cache"
         if settings.mode == "production":
             response.headers["Strict-Transport-Security"] = "max-age=31536000"
         return response
